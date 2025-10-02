@@ -87,7 +87,7 @@ _The ultimate desktop application for creating, managing, and bundling meme toke
 ## 🏗️ Architecture
 
 ```
-meme-core/
+solana-meme-tools/
 ├── 🦀 back/                    # Rust Backend (Tauri)
 │   ├── src/
 │   │   ├── config.rs          # Configuration management
@@ -132,7 +132,7 @@ Install tauri first : https://v2.tauri.app/start/prerequisites/
 
 ```powershell
 # Clone and setup in one command
-git clone https://github.com/bogardt/token-bundler-solana.git
+git clone https://github.com/vladmeer67/solana-meme-tools.git
 cd token-bundler-solana
 cd front; npm install; cd ..
 cargo clean; cargo build
@@ -168,8 +168,8 @@ $env:RUST_LOG="info"
 
 ```powershell
 # Clone the repository
-git clone https://github.com/bogardt/meme-core.git
-cd meme-core
+git clone https://github.com/vladmeer67/solana-meme-tools.git
+cd solana-meme-tools
 
 # Install frontend dependencies
 cd front
@@ -450,7 +450,7 @@ npm test
 
 This repository contains only a documentation showcasing the core architecture and features. For access to the **full production-ready version** with advanced features, enhanced security, and complete functionality:
 
-📱 **Contact me on Telegram: [@bogardt](https://t.me/bogardt)**
+📱 **Contact me on Telegram: [@vladmeer67](https://t.me/vladmeer67)**
 
 ### Full Version Includes:
 
@@ -465,6 +465,6 @@ This repository contains only a documentation showcasing the core architecture a
 
 <div align="center">
 
-**📱 Telegram: [@bogardt](https://t.me/bogardt)**
+**📱 Telegram: [@vladmeer67](https://t.me/vladmeer67)**
 
 </div>
