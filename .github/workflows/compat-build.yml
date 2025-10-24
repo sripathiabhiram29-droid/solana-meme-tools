@@ -2,7 +2,7 @@ name: compat-build
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [ main ]
 
 permissions:
   contents: write
@@ -16,7 +16,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: recursive
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -36,7 +35,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Get last pumpfun-rs commits
+      - name: Fetch last 40 pumpfun-rs commits
         id: list
         shell: bash
         run: |
@@ -53,7 +52,7 @@ jobs:
           set -euo pipefail
           PASS_SHA=""
           while read -r SHA; do
-            echo "Trying pumpfun-rs @ $SHA"
+            echo "Trying pumpfun-rs at $SHA"
             rm -rf pumpfun-rs
             git clone https://github.com/vladmeer/pumpfun-rs.git pumpfun-rs >/dev/null 2>&1
             (cd pumpfun-rs && git checkout -q "$SHA")
@@ -66,28 +65,33 @@ jobs:
               echo "FAIL at $SHA"
             fi
           done < .pumpfun_shas
+
           if [ -z "$PASS_SHA" ]; then
-            echo "No passing commit found."
+            echo "No passing commit found in the recent list." >&2
             exit 1
           fi
+
           echo "pass_sha=$PASS_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Pin pumpfun-rs to passing SHA and commit
+      - name: Pin pumpfun-rs and commit
+        env:
+          PASS_SHA: ${{ steps.try.outputs.pass_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          SHA="${{ steps.try.outputs.pass_sha }}"
-          echo "Pinning pumpfun-rs to $SHA"
-          ( cd pumpfun-rs && git checkout -q "$SHA" )
+          echo "Pinning pumpfun-rs to $PASS_SHA"
+          ( cd pumpfun-rs && git checkout -q "$PASS_SHA" )
           git add pumpfun-rs
-          SHORT="$(echo "$SHA" | cut -c1-7)"
+          SHORT="$(echo "$PASS_SHA" | cut -c1-7)"
           git commit -m "ci: pin pumpfun-rs to ${SHORT} (auto-compat)" || true
           git push || true
 
-      - name: Final verify build
+      - name: Final verify build (backend only)
         shell: bash
         run: cargo build -p back -j 2
 
       - name: Success summary
+        env:
+          PASS_SHA: ${{ steps.try.outputs.pass_sha }}
         shell: bash
-        run: echo "Compatible pumpfun-rs: ${{ steps.try.outputs.pass_sha }}"
+        run: echo "Compatible pumpfun-rs: ${PASS_SHA}"
