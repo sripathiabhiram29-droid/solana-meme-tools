@@ -1,9 +1,8 @@
 name: compat-build
-
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main]
 
 permissions:
   contents: write
@@ -13,95 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Checkout your fork (with submodules)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
-
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: v1-rust-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Git identity for commits
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Get last 40 pumpfun-rs commits
-        id: list
-        run: |
-          set -euo pipefail
-          rm -rf pumpfun-rs
-          git clone https://github.com/vladmeer/pumpfun-rs.git pumpfun-rs
-          (cd pumpfun-rs && git log --pretty=format:%H -n 40) > .pumpfun_shas
-          echo "count=$(wc -l < .pumpfun_shas)" >> "$GITHUB_OUTPUT"
-
-      - name: Try builds until one passes
-        id: try
-        shell: bash
-        run: |
-          set -euo pipefail
-          PASS_SHA=""
-          while read -r SHA; do
-            echo "🔎 Trying pumpfun-rs @ $SHA"
-            rm -rf pumpfun-rs
-            git clone https://github.com/vladmeer/pumpfun-rs.git pumpfun-rs >/dev/null 2>&1
-            (cd pumpfun-rs && git checkout -q "$SHA")
-            # Refresh workspace dependency resolution
-            cargo update
-            # Build backend only (fastest way to surface API mismatches)
-            if cargo build -p back -j 2; then
-              echo "✅ PASS at $SHA"
-              PASS_SHA="$SHA"
-              break
-            else
-              echo "❌ FAIL at $SHA"
-            fi
-          done < .pumpfun_shas
-
-          if [ -z "$PASS_SHA" ]; then
-            echo "No passing commit found in the last $(wc -l < .pumpfun_shas) commits."
-            exit 1
-          fi
-
-          echo "pass_sha=$PASS_SHA" >> "$GITHUB_OUTPUT"
-
-      - name: Pin pumpfun-rs to passing SHA and commit
-        run: |
-          SHA="${{ steps.try.outputs.pass_sha }}"
-          echo "📌 Pinning pumpfun-rs to $SHA"
-          ( cd pumpfun-rs && git checkout -q "$SHA" )
-          git add pumpfun-rs
-          # Bash substring expansion is fine here:
-          SHORT="\${SHA:0:7}"
-          git commit -m "ci: pin pumpfun-rs to \${SHORT} (auto-
-
-cat > .github/workflows/compat-build.yml <<'YAML'
-name: compat-build
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
-
-permissions:
-  contents: write
-
-jobs:
-  pin-pumpfun:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout (with submodules)
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -125,7 +36,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Get last 40 pumpfun-rs commits
+      - name: Get last pumpfun-rs commits
         id: list
         shell: bash
         run: |
@@ -142,25 +53,23 @@ jobs:
           set -euo pipefail
           PASS_SHA=""
           while read -r SHA; do
-            echo "🔎 Trying pumpfun-rs @ $SHA"
+            echo "Trying pumpfun-rs @ $SHA"
             rm -rf pumpfun-rs
             git clone https://github.com/vladmeer/pumpfun-rs.git pumpfun-rs >/dev/null 2>&1
             (cd pumpfun-rs && git checkout -q "$SHA")
             cargo update
             if cargo build -p back -j 2; then
-              echo "✅ PASS at $SHA"
+              echo "PASS at $SHA"
               PASS_SHA="$SHA"
               break
             else
-              echo "❌ FAIL at $SHA"
+              echo "FAIL at $SHA"
             fi
           done < .pumpfun_shas
-
           if [ -z "$PASS_SHA" ]; then
-            echo "No passing commit found in the last $(wc -l < .pumpfun_shas) commits."
+            echo "No passing commit found."
             exit 1
           fi
-
           echo "pass_sha=$PASS_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Pin pumpfun-rs to passing SHA and commit
@@ -168,17 +77,17 @@ jobs:
         run: |
           set -euo pipefail
           SHA="${{ steps.try.outputs.pass_sha }}"
-          echo "📌 Pinning pumpfun-rs to $SHA"
+          echo "Pinning pumpfun-rs to $SHA"
           ( cd pumpfun-rs && git checkout -q "$SHA" )
           git add pumpfun-rs
           SHORT="$(echo "$SHA" | cut -c1-7)"
           git commit -m "ci: pin pumpfun-rs to ${SHORT} (auto-compat)" || true
           git push || true
 
-      - name: Final verify build (backend only)
+      - name: Final verify build
         shell: bash
         run: cargo build -p back -j 2
 
       - name: Success summary
         shell: bash
-        run: echo "✅ Compatible pumpfun-rs: ${{ steps.try.outputs.pass_sha }}"
+        run: echo "Compatible pumpfun-rs: ${{ steps.try.outputs.pass_sha }}"
