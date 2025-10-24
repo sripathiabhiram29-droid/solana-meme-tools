@@ -1,0 +1,114 @@
+name: compat-build
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - "back/**"
+      - "pumpfun-rs/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/compat-build.yml"
+
+permissions:
+  contents: write   # needed so the workflow can push pinning commits
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Ensure workspace resolver=2 (idempotent)
+        run: |
+          if ! grep -q '^resolver *= *"2"' Cargo.toml; then
+            awk '1; /^\[workspace\]$/ { print "resolver = \"2\"" }' Cargo.toml > Cargo.toml.new
+            mv Cargo.toml.new Cargo.toml
+          fi
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Show pumpfun-rs HEAD and recent SHAs
+        run: |
+          cd pumpfun-rs || exit 0
+          git fetch --all --tags || true
+          echo "HEAD: $(git rev-parse --short HEAD)"
+          git --no-pager log --pretty=oneline -n 30 | sed -n '1,30p' || true
+
+      - name: Try recent pumpfun-rs commits until build succeeds
+        id: compat
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -d pumpfun-rs ]; then
+            echo "pumpfun-rs directory not found. Did submodules init?"; exit 1
+          fi
+
+          cd pumpfun-rs
+          git fetch --all --tags || true
+          mapfile -t CANDIDATES < <( (git rev-list --max-count=40 HEAD; git tag --sort=-creatordate | xargs -r -I{} git rev-list -n 1 {} ) | awk '!seen[$1]++' )
+          cd ..
+
+          echo "Will try ${#CANDIDATES[@]} pumpfun-rs commits…"
+
+          PASS_SHA=""
+          for SHA in "${CANDIDATES[@]}"; do
+            echo "::group::Trying pumpfun-rs @ $SHA"
+            ( cd pumpfun-rs && git checkout -q "$SHA" )
+            if cargo build --workspace; then
+              PASS_SHA="$SHA"
+              echo "Build OK with pumpfun-rs @$SHA"
+              echo "::endgroup::"
+              break
+            else
+              echo "Build failed with $SHA"
+              echo "::endgroup::"
+            fi
+          done
+
+          if [ -z "$PASS_SHA" ]; then
+            echo "Found no compatible pumpfun-rs commit among latest candidates."
+            exit 1
+          fi
+
+          echo "pass_sha=$PASS_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: (Optional) Commit the working SHA to pin the submodule
+        if: steps.compat.outputs.pass_sha != ''
+        env:
+          PASS_SHA: ${{ steps.compat.outputs.pass_sha }}
+        run: |
+          set -euo pipefail
+          echo "Pinning pumpfun-rs to $PASS_SHA"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          pushd pumpfun-rs >/dev/null
+          URL=$(git remote get-url origin)
+          git checkout -q "$PASS_SHA"
+          popd >/dev/null
+
+          # Ensure submodule entry exists; if not, add it
+          if ! git config --file .gitmodules --name-only --get-regexp "submodule.pumpfun-rs.path" >/dev/null 2>&1; then
+            git submodule add -f "$URL" pumpfun-rs || true
+          fi
+
+          git add pumpfun-rs .gitmodules || true
+          git commit -m "ci: pin pumpfun-rs to ${PASS_SHA::7} (auto-compat)" || true
+          git push || true
+
+      - name: Print success summary
+        run: |
+          echo "✅ Compatible pumpfun-rs: ${{ steps.compat.outputs.pass_sha }}"
+          echo "If pin step pushed a commit, the repo is now pinned and stable."
